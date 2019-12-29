@@ -1,0 +1,305 @@
+---
+title: "Increased rate of large vessel occlusive stroke following the Christchurch terror attack"
+shorttitle: "Terror attack stroke"
+
+author: 
+  - name          : "Teddy Wu, MD, FRACP"
+    affiliation   : "1"
+    corresponding : yes    # Define only one corresponding author
+    address       : "66 Stewart St, Christchurch 8011, New Zealand"
+    email         : "Teddy.Wu@cdhb.health.nz"
+  - name          : "Daniel J. Myall, PhD"
+    affiliation   : "1"
+  - name          : "Campbell Le Heron, PhD, MD, FRACP"
+    affiliation   : "1,2"
+affiliation:
+  - id            : "1"
+    institution   : "Department of Neurology, Christchurch Hospital, Christchurch, New Zealand"
+  - id            : "2"
+    institution   : "New Zealand Brain Research Institute, 66 Stewart St, Christchurch, New Zealand"
+
+csl: format/sage-vancouver.csl
+bibliography: format/selected_refs.bib
+abstract: |
+  **Abstract:** Abstract goes here
+
+keywords          : "Stroke, terror attack"
+wordcount         : "Abstract: xx, main body: xx"
+
+floatsintext      : no
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+linenumbers       : yes
+mask              : no
+draft             : no
+
+documentclass     : "apa6"
+classoption       : "man"
+output            : papaja::apa6_word
+---
+
+```{r setup, include=FALSE}
+###########################################################################
+# The papaja package is used to format the resulting manuscript.
+# It is not currently available on CRAN, so install from GitHub using devtools:
+#
+# install.packages('devtools')
+# devtools::install_github('crsh/papaja')
+###########################################################################
+library(papaja)
+
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE,
+	dpi = 600 # for reasonable dpi in Word document bitmap figures
+)
+
+# allow complex kableExtra features to render in Word:
+options(kableExtra.auto_format = FALSE)
+```
+
+```{r control}
+rstan::rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+###########################################################################
+# fitting the models takes time, so set this variable to FALSE to allow 
+# reading previously-fit models that have been saved to disk. THESE MODELS
+# ARE NOT NECESSARILY PLATFORM-AGNOSTIC, SO THEY MAY NEED TO BE RECALCULATED 
+# THE FIRST TIME THIS SCRIPT IS RUN ON A NEW COMPUTER:
+RECALCULATE_MODELS = FALSE
+###########################################################################
+
+```
+
+```{r import-packages, message=FALSE}
+# currently need to suppress messages in this block as the tidyverse import 
+# produces tick marks that throw off the latex rendering:
+suppressMessages(library(tidyverse))
+library(magrittr)   # for %<>%
+library(knitr)      # for kable() function to format tables
+library(kableExtra) # additional table formatting options
+library(lubridate)  # manipulate dates
+library(glue)       # construct formatted strings (neater than paste)
+library(janitor)    # clean column names
+library(brms)       # bayesian modelling
+library(ggeffects)  # for visualising model predictions
+library(ggsci)      # scale_fill_npg
+library(cowplot)    # construct multi-panel figures
+
+
+```
+
+
+```{r define-variables}
+# how many iterations to use in the model fitting.
+N_ITERATIONS = 5000
+
+# specify manual colour scheme:
+two_colours = c('#D55E00', '#0072B2')
+
+ndigits <- function(number, digits = 1){
+  return(format(round(number, digits = digits), nsmall = digits))
+}
+
+```
+
+```{r import-data}
+
+vars = c('Admissions','Reperfusion','Thrombolysed','LVO','ECR')
+missing_national_vars = c('Thrombolysed','LVO','ECR')
+
+regions = c('Canterbury','National')
+
+dat_local <- read.csv("data/christchurch_strokes.csv") %>%
+  mutate(Week = Week - 64, # Make relative to week of terror attack
+         area = 'Canterbury') 
+  
+dat_national <- read.csv("data/national_strokes.csv") %>%
+  mutate(Week = Week - 64, # Make relative to week of terror attack
+         area = 'National')
+
+dat_all <- dat_local %>%
+  bind_rows(dat_national) %>%
+  gather(var,count,Reperfusion,Admissions,Thrombolysed,LVO,ECR)
+
+
+```
+
+
+```{r fit-or-load-models, echo=FALSE, message=FALSE, warning=FALSE}
+# decide whether to fit models from scratch, or save execution time by reloading
+# models saved to disk previously:
+if (RECALCULATE_MODELS) {
+
+  # fit the models from scratch and save them to disk:
+  for (region in regions) {
+    
+    for (variable in vars) {
+      
+      # model for assessing effect of terror attack on stroke measure:
+      if (!(region == 'National' & variable %in% missing_national_vars)) {
+        model = brm(data = dat_all %>% 
+                      filter(var == variable) %>%
+                      filter(area == region), 
+                    count ~ effect, 
+                    family = poisson(),
+                    iter = N_ITERATIONS, 
+                    sample_prior = TRUE)
+        
+        saveRDS(model, glue('models/brm_{region}_{variable}.rds'))
+      }
+    }
+  
+  }
+}
+
+# regardless, now read in the previously-fitted models from disk.
+for (region in regions) {
+  for (variable in vars) {
+    if (!(region == 'National' & variable %in% missing_national_vars)) {
+
+      model_name = glue('brm_{region}_{variable}')
+        
+      # read its saved representation from disk:
+      model = readRDS(glue('models/{model_name}.rds'))
+      
+      # assign to a variable with the associated name:
+      assign(model_name, model)
+    }
+  }
+}
+
+```
+
+```{r terror-attack-effects}
+
+# What is the probability that there were was an effect on the measure following the terror attack
+
+# Canterbury data
+p_canterbury_Admissions_terror  = 
+  brms::hypothesis(brm_Canterbury_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
+p_canterbury_Reperfusion_terror  = 
+  brms::hypothesis(brm_Canterbury_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
+p_canterbury_LVO_terror  = 
+  brms::hypothesis(brm_Canterbury_LVO, 'effectterror > 0')$hypothesis$Post.Prob
+p_canterbury_ECR_terror  = 
+  brms::hypothesis(brm_Canterbury_ECR, 'effectterror > 0')$hypothesis$Post.Prob
+p_canterbury_Thrombolysed_terror  = 
+  brms::hypothesis(brm_Canterbury_Thrombolysed, 'effectterror > 0')$hypothesis$Post.Prob
+
+canterbury_admissions_coefs = fixef(brm_Canterbury_Admissions)
+canterbury_Reperfusion_coefs = fixef(brm_Canterbury_Reperfusion)
+canterbury_LVO_coefs = fixef(brm_Canterbury_LVO)
+canterbury_ECR_coefs = fixef(brm_Canterbury_ECR)
+canterbury_Thrombolysed_coefs = fixef(brm_Canterbury_Thrombolysed)
+
+# Compare to national data
+p_national_Admissions_terror  = 
+  brms::hypothesis(brm_National_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
+p_national_Reperfusion_terror  = 
+  brms::hypothesis(brm_National_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
+
+national_admissions_coefs = fixef(brm_National_Admissions)
+national_Reperfusion_coefs = fixef(brm_National_Reperfusion)
+
+```
+
+
+# Introduction
+Sudden catastrophic events, such as terror attacks and natural disasters, have clear and immediate consequences for the people directly affected. However less is known about the subacute impact of such events on the physical health of local community members. We investigated the association between the terror attack in Christchurch, New Zealand on the 15th March 2019 in which 50 people died, and the rates of hospital admissions with ischemic stroke, intracranial large vessel occlusion (LVO) and reperfusion treatment in Christchurch hospital.
+
+# Methods
+
+## Sample
+Christchurch hospital admits all people with stroke in Christchurch a city of 390 000, and provides endovascular thrombectomy for the South Island of New Zealand, population 4.8 million. Counts of ischemic stroke admissions, the numbers of patients with intracranial LVO, and the numbers who underwent reperfusion therapy (intravenous thrombolysis and/or endovascular thrombectomy) were collected for the week following the terror attack and from 1st January 2018 until 21st April 2019. These counts were repeated for the rest of New Zealand with the Christchurch data omitted. 
+ 
+## Analyses
+Data for each measure, and by Christchurch and nationally, were fit with Bayesian Poisson models, using the R[@rdevelopmentcoreteam2019_LanguageEnvironmentStatistical] package _brms_. [@burkner2017_BrmsPackageBayesian] Parameters were given default weakly-informative priors. Four chains of 5000 iterations each were run. The probability of the rate observed in the week following the terror attack being higher than the background rate was calculated for each measure, with a probability higher than 0.99 providing strong evidence of an effect. 
+
+## Reproducibility
+The code and the anonymised dataset used to conduct the analyses and generate this manuscript are available at https://github.com/nzbri/terror-attack-stroke.
+
+# Results
+In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(canterbury_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_canterbury_Admissions_terror, 2)`), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(canterbury_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_canterbury_Reperfusion_terror, 3)`). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 2)`) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 2)`).
+
+Examining the type of strokes, in Canterbury there was an increase in the number of patients with ECRs (Figure 2, left, mean rate = `r ndigits(exp(canterbury_ECR_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_ECR_terror, 3)`), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(canterbury_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_LVO_terror, 3)`), and thrombolysed strokes (Figure 2 right, mean rate = `r ndigits(exp(canterbury_Thrombolysed_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_Thrombolysed_terror, 3)`).
+
+# Discusion
+Sudden catastrophic events such as terror attacks may increase the numbers of patients developing intracranial LVO requiring stroke reperfusion therapies within the affected community. Further research is required to understand the mechanisms underlying this observation. 
+
+
+```{r main-figure, fig.width = 17/2.54, fig.height = 9.7/2.54, fig.cap="Number of stroke admissions (top row) and stroke reperfusions (bottom row) relative to the week of the stroke attack, for Canterbury and nationally (excluding Canterbury). Figure by Myall (2019), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+
+dat_figure_1a <- dat_all %>%
+  filter(var %in% c('Admissions'))
+
+figure_1a = ggplot(dat_figure_1a,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of stroke\nadmissions per week")+
+  xlab("Week relative to terror attack")+
+  facet_wrap(~area,scales = "free_y")+
+  scale_fill_npg()+
+  theme(legend.position="none",
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+dat_figure_1b <- dat_all %>%
+  filter(var %in% c('Reperfusion'))
+
+figure_1b = ggplot(dat_figure_1b,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of stroke\nreperfusions per week")+
+  xlab("Week relative to terror attack")+
+  facet_wrap(~area,scales = "free_y")+
+  scale_fill_npg()+
+  theme(legend.position="none")
+
+figure_1 = cowplot::plot_grid(figure_1a, figure_1b, 
+                              align = 'v',
+                              axis = 'bt', ncol = 1)
+
+print(figure_1)
+
+ggsave(plot = figure_1, 
+       filename = 'figures/Figure_1.pdf', width = 17, height = 9.7, 
+       units = 'cm', device = cairo_pdf,)
+
+ggsave(plot = figure_1, 
+       filename = 'figures/Figure_1.png', width = 17, height = 9.7, 
+       units = 'cm', dpi = 600, type = 'cairo')
+
+```
+
+
+```{r stroke-type-figure, fig.width = 17/2.54, fig.height = 6/2.54, fig.cap="Number of strokes by type relative to the week of the stroke attack for Canterbury. Figure by Myall (2019), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+
+dat_figure_2 <- dat_all %>%
+  filter(var %in% c('Thrombolysed','LVO','ECR'))
+
+figure_2 = ggplot(dat_figure_2,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of strokes per week")+
+  xlab("Week relative to terror attack")+
+  facet_wrap(~var,scales = "free_y")+
+  scale_fill_npg()+
+  theme(legend.position="none")
+
+
+print(figure_2)
+
+ggsave(plot = figure_2, 
+       filename = 'figures/Figure_2.pdf', width = 17, height = 6, 
+       units = 'cm', device = cairo_pdf,)
+
+ggsave(plot = figure_2, 
+       filename = 'figures/Figure_2.png', width = 17, height = 6, 
+       units = 'cm', dpi = 600, type = 'cairo')
+
+```
+
+
+# References
+
+
+
