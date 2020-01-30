@@ -46,6 +46,8 @@ output            : papaja::apa6_word
 #
 # install.packages('devtools')
 # devtools::install_github('crsh/papaja')
+#
+# devtools::install_github("hrbrmstr/hrbrthemes")
 ###########################################################################
 library(papaja)
 
@@ -88,6 +90,9 @@ library(brms)       # bayesian modelling
 library(ggeffects)  # for visualising model predictions
 library(ggsci)      # scale_fill_npg
 library(cowplot)    # construct multi-panel figures
+library(hrbrthemes)   # Fonts
+library(scales)   # pretty_breaks()
+library(forcats)  # recode()
 
 
 ```
@@ -98,7 +103,7 @@ library(cowplot)    # construct multi-panel figures
 N_ITERATIONS = 5000
 
 # specify manual colour scheme:
-two_colours = c('#D55E00', '#0072B2')
+two_colours = c('#BBBBBB', '#DD0000')
 
 ndigits <- function(number, digits = 1){
   return(format(round(number, digits = digits), nsmall = digits))
@@ -108,14 +113,14 @@ ndigits <- function(number, digits = 1){
 
 ```{r import-data}
 
-vars = c('Admissions','Reperfusion','Thrombolysed','LVO','ECR')
-missing_national_vars = c('Thrombolysed','LVO','ECR')
+vars = c('Admissions','Reperfusion','Thrombolysis','LVO','Thrombectomy')
+missing_national_vars = c('Thrombolysis','LVO','Thrombectomy')
 
-regions = c('Canterbury','National')
+regions = c('Christchurch','National')
 
 dat_local <- read.csv("data/christchurch_strokes.csv") %>%
   mutate(Week = Week - 64, # Make relative to week of terror attack
-         area = 'Canterbury') 
+         area = 'Christchurch') 
   
 dat_national <- read.csv("data/national_strokes.csv") %>%
   mutate(Week = Week - 64, # Make relative to week of terror attack
@@ -123,7 +128,7 @@ dat_national <- read.csv("data/national_strokes.csv") %>%
 
 dat_all <- dat_local %>%
   bind_rows(dat_national) %>%
-  gather(var,count,Reperfusion,Admissions,Thrombolysed,LVO,ECR)
+  gather(var,count,Reperfusion,Admissions,Thrombolysis,LVO,Thrombectomy)
 
 
 ```
@@ -178,23 +183,23 @@ for (region in regions) {
 
 # What is the probability that there were was an effect on the measure following the terror attack
 
-# Canterbury data
-p_canterbury_Admissions_terror  = 
-  brms::hypothesis(brm_Canterbury_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
-p_canterbury_Reperfusion_terror  = 
-  brms::hypothesis(brm_Canterbury_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
-p_canterbury_LVO_terror  = 
-  brms::hypothesis(brm_Canterbury_LVO, 'effectterror > 0')$hypothesis$Post.Prob
-p_canterbury_ECR_terror  = 
-  brms::hypothesis(brm_Canterbury_ECR, 'effectterror > 0')$hypothesis$Post.Prob
-p_canterbury_Thrombolysed_terror  = 
-  brms::hypothesis(brm_Canterbury_Thrombolysed, 'effectterror > 0')$hypothesis$Post.Prob
+# Christchurch data
+p_Christchurch_Admissions_terror  = 
+  brms::hypothesis(brm_Christchurch_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
+p_Christchurch_Reperfusion_terror  = 
+  brms::hypothesis(brm_Christchurch_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
+p_Christchurch_LVO_terror  = 
+  brms::hypothesis(brm_Christchurch_LVO, 'effectterror > 0')$hypothesis$Post.Prob
+p_Christchurch_Thrombectomy_terror  = 
+  brms::hypothesis(brm_Christchurch_Thrombectomy, 'effectterror > 0')$hypothesis$Post.Prob
+p_Christchurch_Thrombolysis_terror  = 
+  brms::hypothesis(brm_Christchurch_Thrombolysis, 'effectterror > 0')$hypothesis$Post.Prob
 
-canterbury_admissions_coefs = fixef(brm_Canterbury_Admissions)
-canterbury_Reperfusion_coefs = fixef(brm_Canterbury_Reperfusion)
-canterbury_LVO_coefs = fixef(brm_Canterbury_LVO)
-canterbury_ECR_coefs = fixef(brm_Canterbury_ECR)
-canterbury_Thrombolysed_coefs = fixef(brm_Canterbury_Thrombolysed)
+Christchurch_admissions_coefs = fixef(brm_Christchurch_Admissions)
+Christchurch_Reperfusion_coefs = fixef(brm_Christchurch_Reperfusion)
+Christchurch_LVO_coefs = fixef(brm_Christchurch_LVO)
+Christchurch_Thrombectomy_coefs = fixef(brm_Christchurch_Thrombectomy)
+Christchurch_Thrombolysis_coefs = fixef(brm_Christchurch_Thrombolysis)
 
 # Compare to national data
 p_national_Admissions_terror  = 
@@ -209,7 +214,6 @@ national_Reperfusion_coefs = fixef(brm_National_Reperfusion)
 
 
 # Introduction
-Sudden catastrophic events, such as terror attacks and natural disasters, have clear and immediate consequences for the people directly affected. However less is known about the subacute impact of such events on the physical health of local community members. We investigated the association between the terror attack in Christchurch, New Zealand on the 15th March 2019 in which 50 people died, and the rates of hospital admissions with ischemic stroke, intracranial large vessel occlusion (LVO) and reperfusion treatment in Christchurch hospital.
 
 # Methods
 
@@ -223,38 +227,60 @@ Data for each measure, and by Christchurch and nationally, were fit with Bayesia
 The code and the anonymised dataset used to conduct the analyses and generate this manuscript are available at https://github.com/nzbri/terror-attack-stroke.
 
 # Results
-In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(canterbury_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_canterbury_Admissions_terror, 2)`), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(canterbury_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_canterbury_Reperfusion_terror, 3)`). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 2)`) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 2)`).
+In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(Christchurch_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_Christchurch_Admissions_terror, 2)`), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(Christchurch_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_Christchurch_Reperfusion_terror, 3)`). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 2)`) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 2)`).
 
-Examining the type of strokes, in Canterbury there was an increase in the number of patients with ECRs (Figure 2, left, mean rate = `r ndigits(exp(canterbury_ECR_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_ECR_terror, 3)`), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(canterbury_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_LVO_terror, 3)`), and thrombolysed strokes (Figure 2 right, mean rate = `r ndigits(exp(canterbury_Thrombolysed_coefs['Intercept','Estimate']))`, P = `r ndigits(p_canterbury_Thrombolysed_terror, 3)`).
+Examining the type of strokes, in Christchurch there was an increase in the number of patients with Thrombectomys (Figure 2, left, mean rate = `r ndigits(exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombectomy_terror, 3)`), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(Christchurch_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_LVO_terror, 3)`), and Thrombolysis strokes (Figure 2 right, mean rate = `r ndigits(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombolysis_terror, 3)`).
 
 # Discusion
-Sudden catastrophic events such as terror attacks may increase the numbers of patients developing intracranial LVO requiring stroke reperfusion therapies within the affected community. Further research is required to understand the mechanisms underlying this observation. 
+
+# Figure National
 
 
-```{r main-figure, fig.width = 17/2.54, fig.height = 9.7/2.54, fig.cap="Number of stroke admissions (top row) and stroke reperfusions (bottom row) relative to the week of the stroke attack, for Canterbury and nationally (excluding Canterbury). Figure by Myall (2019), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+```{r main-figure, fig.width = 18/2.54, fig.height = 13/2.54, fig.cap="Number of stroke admissions (top row) and stroke reperfusions (bottom row) per week for Christchurch Hospital and nationally (excluding Christchurch Hospital). The week starting on Monday, following the stroke attack, is highlighted as week 0. The average number of admissions or strokes per week is shown by the black horizontal line. Figure by Myall (2020), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+
+dat_mean_rate_admissions <- data.frame(area = c('National','Christchurch'),
+                    rate = c(exp(national_admissions_coefs['Intercept','Estimate']),
+                             exp(Christchurch_admissions_coefs['Intercept','Estimate'])
+                    )
+)
+
+dat_mean_rate_repurfusion <- data.frame(area = c('National','Christchurch'),
+                    rate = c(exp(national_Reperfusion_coefs['Intercept','Estimate']),
+                             exp(Christchurch_Reperfusion_coefs['Intercept','Estimate'])
+                             
+                    )
+)
 
 dat_figure_1a <- dat_all %>%
   filter(var %in% c('Admissions'))
 
 figure_1a = ggplot(dat_figure_1a,aes(y=count,x=Week,fill=effect))+
-  geom_bar(stat="identity")+ylab("Number of stroke\nadmissions per week")+
-  xlab("Week relative to terror attack")+
+  geom_bar(stat="identity")+ylab("Number of stroke admissions per week")+
+  geom_hline(data = dat_mean_rate_admissions, aes(yintercept = rate))+
+  xlab("Weeks relative to terror attack")+
   facet_wrap(~area,scales = "free_y")+
-  scale_fill_npg()+
+  scale_fill_manual(values=two_colours)+
+  scale_y_continuous(breaks= pretty_breaks())+
+  theme_ipsum()+
   theme(legend.position="none",
         axis.title.x=element_blank(),
         axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+        axis.ticks.x=element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
 dat_figure_1b <- dat_all %>%
   filter(var %in% c('Reperfusion'))
 
 figure_1b = ggplot(dat_figure_1b,aes(y=count,x=Week,fill=effect))+
-  geom_bar(stat="identity")+ylab("Number of stroke\nreperfusions per week")+
-  xlab("Week relative to terror attack")+
+  geom_bar(stat="identity")+ylab("Number of stroke reperfusions per week")+
+  geom_hline(data = dat_mean_rate_repurfusion, aes(yintercept = rate))+
+  xlab("Weeks relative to terror attack")+
   facet_wrap(~area,scales = "free_y")+
-  scale_fill_npg()+
-  theme(legend.position="none")
+  scale_fill_manual(values=two_colours)+
+  scale_y_continuous(breaks= pretty_breaks())+
+  theme_ipsum()+
+  theme(legend.position="none",
+        plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
 figure_1 = cowplot::plot_grid(figure_1a, figure_1b, 
                               align = 'v',
@@ -263,37 +289,50 @@ figure_1 = cowplot::plot_grid(figure_1a, figure_1b,
 print(figure_1)
 
 ggsave(plot = figure_1, 
-       filename = 'figures/Figure_1.pdf', width = 17, height = 9.7, 
+       filename = 'figures/Figure_1.pdf', width = 18, height = 13, 
        units = 'cm', device = cairo_pdf,)
 
 ggsave(plot = figure_1, 
-       filename = 'figures/Figure_1.png', width = 17, height = 9.7, 
+       filename = 'figures/Figure_1.png', width = 18, height = 13, 
        units = 'cm', dpi = 600, type = 'cairo')
 
 ```
 
 
-```{r stroke-type-figure, fig.width = 17/2.54, fig.height = 6/2.54, fig.cap="Number of strokes by type relative to the week of the stroke attack for Canterbury. Figure by Myall (2019), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+```{r stroke-type-figure, fig.width = 18/2.54, fig.height = 7/2.54, fig.cap="Number of strokes per week by type at Christchurch Hospital, with the week starting on Monday following the terror attack highlighted at week 0. The average number of strokes per week is shown by the black horizontal line. Figure by Myall (2020), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
 
 dat_figure_2 <- dat_all %>%
-  filter(var %in% c('Thrombolysed','LVO','ECR'))
+  filter(var %in% c('Thrombolysis','LVO','Thrombectomy')) %>%
+  mutate(var = recode(var, LVO = "Large vessel occlusion"))
+
+dat_mean_rate <- data.frame(var = c('Thrombolysis','Large vessel occlusion','Thrombectomy'),
+                    rate = c(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']),
+                             exp(Christchurch_LVO_coefs['Intercept','Estimate']),
+                             exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate'])
+                    )
+)
 
 figure_2 = ggplot(dat_figure_2,aes(y=count,x=Week,fill=effect))+
   geom_bar(stat="identity")+ylab("Number of strokes per week")+
-  xlab("Week relative to terror attack")+
-  facet_wrap(~var,scales = "free_y")+
-  scale_fill_npg()+
-  theme(legend.position="none")
+  geom_hline(data = dat_mean_rate, aes(yintercept = rate))+
+  xlab("Weeks relative to terror attack")+
+  facet_wrap(~var)+#,scales = "free_y")+
+  #scale_y_continuous(breaks=seq(0,10,2))+
+  scale_y_continuous(breaks= pretty_breaks())+
+  scale_fill_manual(values=two_colours)+
+  theme_ipsum()+
+  theme(legend.position="none",
+        plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
 
 print(figure_2)
 
 ggsave(plot = figure_2, 
-       filename = 'figures/Figure_2.pdf', width = 17, height = 6, 
+       filename = 'figures/Figure_2.pdf', width = 18, height = 7, 
        units = 'cm', device = cairo_pdf,)
 
 ggsave(plot = figure_2, 
-       filename = 'figures/Figure_2.png', width = 17, height = 6, 
+       filename = 'figures/Figure_2.png', width = 18, height = 7, 
        units = 'cm', dpi = 600, type = 'cairo')
 
 ```
