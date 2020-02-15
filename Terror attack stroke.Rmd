@@ -93,7 +93,7 @@ library(cowplot)    # construct multi-panel figures
 library(hrbrthemes)   # Fonts
 library(scales)   # pretty_breaks()
 library(forcats)  # recode()
-
+library(broom)    # broom()
 
 ```
 
@@ -129,6 +129,8 @@ dat_national <- read.csv("data/national_strokes.csv") %>%
 dat_all <- dat_local %>%
   bind_rows(dat_national) %>%
   gather(var,count,Reperfusion,Admissions,Thrombolysis,LVO,Thrombectomy)
+
+dat_demo <- read.csv("data/demographics.csv")
 
 
 ```
@@ -179,21 +181,79 @@ for (region in regions) {
 
 ```
 
+
+```{r demographics, echo=FALSE}
+
+N_admissions_christchurch = dat_demo %>%
+  filter(region == 'Christchurch',variable =='Admissions') %>%
+  count()
+
+N_repurfusions_christchurch = dat_demo %>%
+  filter(region == 'Christchurch',variable =='Repurfusion') %>%
+  count()
+
+N_repurfusion_percent = N_repurfusions_christchurch/N_admissions_christchurch
+
+# Don't currently have variable to calculate this from raw data
+N_imaging_christchurch = 399
+
+N_imaging_percent = N_imaging_christchurch/N_admissions_christchurch
+
+N_LVO_christchurch = dat_demo %>%
+  filter(region == 'Christchurch',variable =='LVO') %>%
+  count()
+
+N_LVO_imaging_percent = N_LVO_christchurch/N_imaging_christchurch
+
+mean_ages <- dat_demo %>%
+  filter(region == 'Christchurch') %>%
+  group_by(variable,effect) %>%
+  summarise(mean(age)) 
+  
+mean_ages_p <- dat_demo %>% 
+  filter(region == 'Christchurch') %>%
+  group_by(variable) %>%
+  do(tidy(t.test(age ~ effect, data = .)))
+
+mean_sex <- dat_demo %>%
+  filter(region == 'Christchurch') %>%
+  group_by(variable,effect) %>%
+  summarise(mean(sex == 'Male')) 
+
+mean_sex_p <- dat_demo %>% 
+  filter(region == 'Christchurch') %>%
+  group_by(variable) %>%
+  do(tidy(t.test(sex == 'Male' ~ effect, data = .)))
+
+mean_af <- dat_demo %>%
+  filter(region == 'Christchurch') %>%
+  group_by(variable,effect) %>%
+  summarise(mean(atrial_fibrillation == 'Yes')) 
+
+mean_af_p <- dat_demo %>% 
+  filter(region == 'Christchurch') %>%
+  group_by(variable) %>%
+  do(tidy(t.test(atrial_fibrillation == 'Yes' ~ effect, data = .)))
+
+
+```
+
+
 ```{r terror-attack-effects}
 
 # What is the probability that there were was an effect on the measure following the terror attack
 
 # Christchurch data
 p_Christchurch_Admissions_terror  = 
-  brms::hypothesis(brm_Christchurch_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_Christchurch_Admissions, 'effectterror > 0')$hypothesis$Post.Prob*100
 p_Christchurch_Reperfusion_terror  = 
-  brms::hypothesis(brm_Christchurch_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_Christchurch_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob*100
 p_Christchurch_LVO_terror  = 
-  brms::hypothesis(brm_Christchurch_LVO, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_Christchurch_LVO, 'effectterror > 0')$hypothesis$Post.Prob*100
 p_Christchurch_Thrombectomy_terror  = 
-  brms::hypothesis(brm_Christchurch_Thrombectomy, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_Christchurch_Thrombectomy, 'effectterror > 0')$hypothesis$Post.Prob*100
 p_Christchurch_Thrombolysis_terror  = 
-  brms::hypothesis(brm_Christchurch_Thrombolysis, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_Christchurch_Thrombolysis, 'effectterror > 0')$hypothesis$Post.Prob*100
 
 Christchurch_admissions_coefs = fixef(brm_Christchurch_Admissions)
 Christchurch_Reperfusion_coefs = fixef(brm_Christchurch_Reperfusion)
@@ -203,9 +263,9 @@ Christchurch_Thrombolysis_coefs = fixef(brm_Christchurch_Thrombolysis)
 
 # Compare to national data
 p_national_Admissions_terror  = 
-  brms::hypothesis(brm_National_Admissions, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_National_Admissions, 'effectterror > 0')$hypothesis$Post.Prob*100
 p_national_Reperfusion_terror  = 
-  brms::hypothesis(brm_National_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob
+  brms::hypothesis(brm_National_Reperfusion, 'effectterror > 0')$hypothesis$Post.Prob*100
 
 national_admissions_coefs = fixef(brm_National_Admissions)
 national_Reperfusion_coefs = fixef(brm_National_Reperfusion)
@@ -227,9 +287,9 @@ Data for each measure, and by Christchurch and nationally, were fit with Bayesia
 The code and the anonymised dataset used to conduct the analyses and generate this manuscript are available at https://github.com/nzbri/terror-attack-stroke.
 
 # Results
-In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(Christchurch_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_Christchurch_Admissions_terror, 2)`), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(Christchurch_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_Christchurch_Reperfusion_terror, 3)`). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 2)`) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 2)`).
+In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(Christchurch_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_Christchurch_Admissions_terror, 0)`%), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(Christchurch_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_Christchurch_Reperfusion_terror, 1)`%). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 0)`%) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 0)`%).
 
-Examining the type of strokes, in Christchurch there was an increase in the number of patients with Thrombectomys (Figure 2, left, mean rate = `r ndigits(exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombectomy_terror, 3)`), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(Christchurch_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_LVO_terror, 3)`), and Thrombolysis strokes (Figure 2 right, mean rate = `r ndigits(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombolysis_terror, 3)`).
+Examining the type of strokes, in Christchurch there was an increase in the number of patients with Thrombectomys (Figure 2, left, mean rate = `r ndigits(exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombectomy_terror, 1)`%), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(Christchurch_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_LVO_terror, 1)`%), and Thrombolysis strokes (Figure 2 right, mean rate = `r ndigits(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombolysis_terror, 1)`%).
 
 # Discusion
 
