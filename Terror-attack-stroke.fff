@@ -1,0 +1,55 @@
+\begin{figure*}[hbt]
+\ifnextchar[{\eatarg}{}
+
+\centering
+\includegraphics{Terror-attack-stroke_files/figure-latex/combined-figure-1.png}
+\caption{A) Number of ischaemic strokes per week (Monday-Sunday) at
+Christchurch Hospital (left panel) and elsewhere in New Zealand (right
+panel) with the week following the terror attack highlighted at week 0.
+The average number of strokes per week is shown by the black horizontal
+line. There was no evidence for increase in total ischaemic stroke
+admissions the week after terror attack in Christchurch Hospital (n= 26,
+mean rate = 27, P = 39\%) or elsewhere in New Zealand (n=118, mean rate
+= 105, P = 80\%). B) Total weekly (Monday-Sunday) number of stroke
+reperfusion treatment at Christchurch Hospital (left panel) and
+elsewhere in New Zealand (right panel) with the week following the
+terror attack highlighted at week 0. There was strong evidence for
+increase in reperfusion treatment in Christchurch (week after terror
+attack =11, mean rate= 2.6, P = 99.9\%) without strong evidence for an
+increase elsewhere in New Zealand (week after = 22, mean rate= 14, P =
+96\%). C) Rolling left-aligned weekly total large vessel occlusions in
+Christchurch by day. Counts where there was strong evidence of an
+increase in the total LVOs were shaded red. Figure by Myall (2020),
+distributed at \url{https://doi.org/10.6084/xx} under an open CC-BY 4.0
+license.}
+\end{figure*}
+\efloatseparator
+ 
+\begin{figure*}[hbt]
+\ifnextchar[{\eatarg}{}
+
+\centering
+\includegraphics{Terror-attack-stroke_files/figure-latex/extra-figure-1-1.png}
+\caption{Number of stroke admissions (top row) and stroke reperfusions
+(bottom row) per week for Christchurch Hospital and nationally
+(excluding Christchurch Hospital). The week starting on Monday,
+following the stroke attack, is highlighted as week 0. The average
+number of admissions or strokes per week is shown by the black
+horizontal line. Figure by Myall (2020), distributed at
+\url{https://doi.org/10.6084/xx} under an open CC-BY 4.0 license.}
+\end{figure*}
+\efloatseparator
+ 
+\begin{figure*}[hbt]
+\ifnextchar[{\eatarg}{}
+
+\centering
+\includegraphics{Terror-attack-stroke_files/figure-latex/stroke-type-figure-1.png}
+\caption{Number of strokes per week by type at Christchurch Hospital,
+with the week starting on Monday following the terror attack highlighted
+at week 0. The average number of strokes per week is shown by the black
+horizontal line. Figure by Myall (2020), distributed at
+\url{https://doi.org/10.6084/xx} under an open CC-BY 4.0 license.}
+\end{figure*}
+\efloatseparator
+ 

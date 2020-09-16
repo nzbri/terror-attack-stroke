@@ -1,30 +1,14 @@
 ---
-title: "Increased rate of large vessel occlusive stroke following the Christchurch terror attack"
+title: "Increased large vessel occlusive strokes following the Christchurch 2019 March 15 terror attack"
 shorttitle: "Terror attack stroke"
-
-author: 
-  - name          : "Teddy Wu, MD, FRACP"
-    affiliation   : "1"
-    corresponding : yes    # Define only one corresponding author
-    address       : "66 Stewart St, Christchurch 8011, New Zealand"
-    email         : "Teddy.Wu@cdhb.health.nz"
-  - name          : "Daniel J. Myall, PhD"
-    affiliation   : "1"
-  - name          : "Campbell Le Heron, PhD, MD, FRACP"
-    affiliation   : "1,2"
-affiliation:
-  - id            : "1"
-    institution   : "Department of Neurology, Christchurch Hospital, Christchurch, New Zealand"
-  - id            : "2"
-    institution   : "New Zealand Brain Research Institute, 66 Stewart St, Christchurch, New Zealand"
+author: |
+  | Teddy Y Wu, Daniel Myall, David Palmer, James Beharry, Jen Yuh Lim,
+  | Deborah F Mason, Jon Reimers, Roderick Duncan, James Weaver,
+  | Wayne Collecutt, Paul Mouthaan, Anthony Lim, Mike A Hurrell, 
+  | P Alan Barber, Annemarei Ranta, John N Fink, Campbell Le Heron
 
 csl: format/sage-vancouver.csl
 bibliography: format/selected_refs.bib
-abstract: |
-  **Abstract:** Abstract goes here
-
-keywords          : "Stroke, terror attack"
-wordcount         : "Abstract: xx, main body: xx"
 
 floatsintext      : no
 figurelist        : no
@@ -34,12 +18,21 @@ linenumbers       : yes
 mask              : no
 draft             : no
 
-documentclass     : "apa6"
-classoption       : "man"
-output            : papaja::apa6_word
+#documentclass     : "apa6"
+#classoption       : "man"
+#output            : papaja::apa6_pdf
+output:
+  pdf_document:
+    keep_tex: true
+    extra_dependencies: ["float"]
+    latex_engine: pdflatex   
+    
+header-includes:
+ \usepackage{float}
+ \floatplacement{figure}{H}
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE, echo=FALSE}
 ###########################################################################
 # The papaja package is used to format the resulting manuscript.
 # It is not currently available on CRAN, so install from GitHub using devtools:
@@ -49,20 +42,24 @@ output            : papaja::apa6_word
 #
 # devtools::install_github("hrbrmstr/hrbrthemes")
 ###########################################################################
-library(papaja)
+#library(papaja)
 
 knitr::opts_chunk$set(
 	echo = FALSE,
 	message = FALSE,
 	warning = FALSE,
-	dpi = 600 # for reasonable dpi in Word document bitmap figures
+	dpi = 600, # for reasonable dpi in Word document bitmap figures
+	out.extra = ""
 )
 
 # allow complex kableExtra features to render in Word:
 options(kableExtra.auto_format = FALSE)
+
+# Load extra fonts
+extrafont::loadfonts()
 ```
 
-```{r control}
+```{r control, include = FALSE, echo = FALSE}
 rstan::rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
@@ -76,7 +73,7 @@ RECALCULATE_MODELS = FALSE
 
 ```
 
-```{r import-packages, message=FALSE}
+```{r import-packages, message = FALSE, echo = FALSE, include = FALSE}
 # currently need to suppress messages in this block as the tidyverse import 
 # produces tick marks that throw off the latex rendering:
 suppressMessages(library(tidyverse))
@@ -93,12 +90,13 @@ library(cowplot)    # construct multi-panel figures
 library(hrbrthemes)   # Fonts
 library(scales)   # pretty_breaks()
 library(forcats)  # recode()
-library(broom)    # broom()
+library(broom)    # tidy()
+library(zoo)      # rollmean()
 
 ```
 
 
-```{r define-variables}
+```{r define-variables, include = FALSE}
 # how many iterations to use in the model fitting.
 N_ITERATIONS = 5000
 
@@ -111,17 +109,19 @@ ndigits <- function(number, digits = 1){
 
 ```
 
-```{r import-data}
+```{r import-data, echo = FALSE}
 
 vars = c('Admissions','Reperfusion','Thrombolysis','LVO','Thrombectomy')
 missing_national_vars = c('Thrombolysis','LVO','Thrombectomy')
 
 regions = c('Christchurch','National')
 
+# Local CDHB data
 dat_local <- read.csv("data/christchurch_strokes.csv") %>%
   mutate(Week = Week - 64, # Make relative to week of terror attack
          area = 'Christchurch') 
-  
+
+# National data
 dat_national <- read.csv("data/national_strokes.csv") %>%
   mutate(Week = Week - 64, # Make relative to week of terror attack
          area = 'National')
@@ -130,13 +130,31 @@ dat_all <- dat_local %>%
   bind_rows(dat_national) %>%
   gather(var,count,Reperfusion,Admissions,Thrombolysis,LVO,Thrombectomy)
 
+# Demographics (for Christchurch individuals)
 dat_demo <- read.csv("data/demographics.csv")
+
+# Set the analysis window size (in days) for the rolling analysis
+window_size = 7
+
+# Daily data (Only available for subset of Christchurch data)
+dat_daily <-read.csv("data/christchurch_strokes_daily.csv") %>%
+  mutate(roll_total = rollmean(LVO, window_size, fill=0, align="left")*window_size) %>%
+  mutate(date = dmy(Date),
+         day_of_week = wday(date,week_start = 1)) %>%
+  mutate(effect = if_else((date >= dmy("15/3/2019") & 
+                              (date <= dmy("24/3/2019"))),
+                          "Effect",
+                          "Baseline")) %>%
+  ## Anything of a count of 8 or higher is strong effect (=99.51% probability of an increase over the baseline rate)
+  mutate(effect2 = if_else(roll_total >= 8, "Effect", "Baseline"))
+
 
 
 ```
 
 
-```{r fit-or-load-models, echo=FALSE, message=FALSE, warning=FALSE}
+```{r fit-or-load-models, echo = FALSE, message = FALSE, warning = FALSE}
+
 # decide whether to fit models from scratch, or save execution time by reloading
 # models saved to disk previously:
 if (RECALCULATE_MODELS) {
@@ -161,6 +179,39 @@ if (RECALCULATE_MODELS) {
     }
   
   }
+  
+  # LVO weekly data - estimate probability of different weekly counts
+  # being higher than the baseline rate (weeks before terror attack)
+  # To compare to seven-day rolling total data
+  for (n in seq(5,10)) {
+    
+    data = dat_all %>% 
+          filter(var == 'LVO') %>%
+          filter(area == 'Christchurch') %>%
+          filter(Week < 0) %>%
+          add_row(count=n,effect='terror')
+    
+    model = brm(data = data, 
+                count ~ effect, 
+                family = poisson(),
+                iter = N_ITERATIONS,
+                control = list(max_treedepth = 15,adapt_delta=0.99),
+                sample_prior = TRUE)
+    
+    saveRDS(model, glue('models/brm_LVO_weekly_{n}.rds'))
+  }
+  
+  
+  # Model based upon daily LVO data with 10-day terror effect window
+  model_christchurch_lvo_daily = brm(data = dat_daily, 
+                                      LVO ~ effect, 
+                                      family = poisson(),
+                                      iter = N_ITERATIONS, 
+                                      sample_prior = TRUE)
+  
+  saveRDS(model_christchurch_lvo_daily, 
+          glue('models/brm_Christchurch_LVO_daily.rds'))
+  
 }
 
 # regardless, now read in the previously-fitted models from disk.
@@ -177,12 +228,27 @@ for (region in regions) {
       assign(model_name, model)
     }
   }
+  
+  model_name = 'brm_christchurch_lvo_daily'
+  model = readRDS(glue('models/{model_name}.rds'))
+  assign(model_name,model)
+  
+  for (n in seq(5,10)) {
+    model_name = glue('brm_LVO_weekly_{n}')
+    model = readRDS(glue('models/{model_name}.rds'))
+    assign(model_name,model)
+  }
+  
 }
+
+
 
 ```
 
 
-```{r demographics, echo=FALSE}
+
+
+```{r demographics, echo = FALSE}
 
 N_admissions_christchurch = dat_demo %>%
   filter(region == 'Christchurch',variable =='Admissions') %>%
@@ -239,7 +305,7 @@ mean_af_p <- dat_demo %>%
 ```
 
 
-```{r terror-attack-effects}
+```{r terror-attack-effects, echo = FALSE, include = FALSE}
 
 # What is the probability that there were was an effect on the measure following the terror attack
 
@@ -270,51 +336,242 @@ p_national_Reperfusion_terror  =
 national_admissions_coefs = fixef(brm_National_Admissions)
 national_Reperfusion_coefs = fixef(brm_National_Reperfusion)
 
+# Daily data
+model_daily_lvo1 <- add_criterion(brm_christchurch_lvo_daily, c("loo", "waic"))
+summary(model_daily_lvo1)
+
+Christchurch_LVO_daily_coefs = fixef(brm_christchurch_lvo_daily)
+
+p_Christchurch_LVO_daily_terror  = 
+  brms::hypothesis(brm_christchurch_lvo_daily, 
+                   'effectTerror > 0')$hypothesis$Post.Prob*100
+
+# Test different counts for rolling-weekly effect
+p_LVO_5  = 
+  brms::hypothesis(brm_LVO_weekly_5, 'effectterror > 0')$hypothesis$Post.Prob*100
+p_LVO_6  = 
+  brms::hypothesis(brm_LVO_weekly_6, 'effectterror > 0')$hypothesis$Post.Prob*100
+p_LVO_7  = 
+  brms::hypothesis(brm_LVO_weekly_7, 'effectterror > 0')$hypothesis$Post.Prob*100
+p_LVO_8  = 
+  brms::hypothesis(brm_LVO_weekly_8, 'effectterror > 0')$hypothesis$Post.Prob*100
+p_LVO_9  = 
+  brms::hypothesis(brm_LVO_weekly_9, 'effectterror > 0')$hypothesis$Post.Prob*100
+p_LVO_10  = 
+  brms::hypothesis(brm_LVO_weekly_10, 'effectterror > 0')$hypothesis$Post.Prob*100
+
 ```
 
 
-# Introduction
+## INTRODUCTION
 
-# Methods
+Sudden catastrophic events such as terror attacks have clear and immediate consequences for the people directly affected. However less is known about the impact on the physical health of local community members (Online supplemental material for further discussion). Acute psychological stress may cause a parallel physiological response increasing risk of cardiovascular events [1-3]. On March 15th 2019 a gunman shot and killed 51 people praying at the Al Noor and Linwood mosques in Christchurch city, New Zealand. We observed a rise in ischaemic stroke reperfusion treatments in the week starting Monday 18th March, three days after the terror attack. We hypothesised this observation could have occurred because of either an effect of the attack on total number of ischaemic strokes and/or the severity of these strokes, or coincidence. We investigated these possibilities by analysing the association between the terror attack and rate of stroke reperfusion treatment, proven intracranial large vessel occlusion (LVO) and total stroke admissions at Christchurch hospital as well as the national stroke dataset. 
 
-## Sample
-Christchurch hospital admits all people with stroke in Christchurch a city of 390 000, and provides endovascular thrombectomy for the South Island of New Zealand, population 4.8 million. Counts of ischemic stroke admissions, the numbers of patients with intracranial LVO, and the numbers who underwent reperfusion therapy (intravenous thrombolysis and/or endovascular thrombectomy) were collected for the week following the terror attack and from 1st January 2018 until 21st April 2019. These counts were repeated for the rest of New Zealand with the Christchurch data omitted. 
- 
-## Analyses
-Data for each measure, and by Christchurch and nationally, were fit with Bayesian Poisson models, using the R[@rdevelopmentcoreteam2019_LanguageEnvironmentStatistical] package _brms_. [@burkner2017_BrmsPackageBayesian] Parameters were given default weakly-informative priors. Four chains of 5000 iterations each were run. The probability of the rate observed in the week following the terror attack being higher than the background rate was calculated for each measure, with a probability higher than 0.99 providing strong evidence of an effect. 
+## METHODS
 
-## Reproducibility
-The code and the anonymised dataset used to conduct the analyses and generate this manuscript are available at https://github.com/nzbri/terror-attack-stroke.
+Detailed methodology is available in the supplemental material. Briefly, we used a Bayesian Poisson model to estimate the effect of the terror attack on ischaemic stroke admissions, occurrence of intracranial LVO and reperfusion therapy, in the week after the attack compared with weekly data from 1st January 2018 until 21st April 2019. These analyses were repeated for the rest of New Zealand excluding Christchurch data. The probability of the rate observed in the week following the terror attack being higher than the background rate was calculated for each measure, with a probability higher than 99.5% providing strong evidence of an effect. 
+To ensure any observed effects were not simply related to the default weekly grouping window (Monday to Sunday), we calculated daily left-aligned (i.e. events in the week following the index day, inclusive) rolling weekly totals for proven Christchurch LVOs across this same time period, analysed using the same methods.
 
-# Results
-In the week following the 15th March 2019 terror attack there was no evidence of difference in the number of ischemic stroke admissions (Figure 1 top left, mean rate = `r ndigits(exp(Christchurch_admissions_coefs['Intercept','Estimate']),0)`, probability of an increse after the terror attack P = `r ndigits(p_Christchurch_Admissions_terror, 0)`%), but an increase in those receiving reperfusion therapy (Figure 1 bottom left, mean rate= `r ndigits(exp(Christchurch_Reperfusion_coefs['Intercept','Estimate']))`, probability P = `r ndigits(p_Christchurch_Reperfusion_terror, 1)`%). Over the same periods in the rest of New Zealand, there was no evidence of a difference in the number of ischemic stroke admissions (Figure 1 top right, mean rate = `r ndigits(exp(national_admissions_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Admissions_terror, 0)`%) nor strong evidence of an increase in the numbers of people treated with reperfusion treatments (Figure 1 bottom left, mean rate= `r ndigits(exp(national_Reperfusion_coefs['Intercept','Estimate']),0)`, P = `r ndigits(p_national_Reperfusion_terror, 0)`%).
+## RESULTS
 
-Examining the type of strokes, in Christchurch there was an increase in the number of patients with Thrombectomys (Figure 2, left, mean rate = `r ndigits(exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombectomy_terror, 1)`%), intracranial LVOs (Figure 2 centre, mean rate = `r ndigits(exp(Christchurch_LVO_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_LVO_terror, 1)`%), and Thrombolysis strokes (Figure 2 right, mean rate = `r ndigits(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']))`, P = `r ndigits(p_Christchurch_Thrombolysis_terror, 1)`%).
+In the week starting Monday following the terror attack there was no evidence of a difference in the total ischaemic stroke admissions at Christchurch hospital (Figure 1a, P=`r ndigits(p_Christchurch_Admissions_terror, 0)`%) or elsewhere in New Zealand (Figure 1c, P=`r ndigits(p_national_Admissions_terror, 0)`%). Rather, this effect was driven by an increase in intracranial LVOs at Christchurch Hospital (supplementary figure, P=`r ndigits(p_Christchurch_Thrombectomy_terror, 2)`%). There was strong evidence of an increase in Christchurch reperfusion therapy (Figure 1b, P (probability higher than background rate)=`r ndigits(p_Christchurch_Reperfusion_terror, 1)`%) without strong evidence of an increase elsewhere in New Zealand (Figure 1b, P=`r ndigits(p_national_Reperfusion_terror, 0)`%). 
 
-# Discusion
+There was also strong evidence (P>99.5%) of an increase in rolling weekly left-aligned LVO totals in Christchurch for four days in the period following the terror attack (Figure 1c). No other time periods reached this level of evidence for an increase.  There was no difference in the age, gender or rates of atrial fibrillation in ischaemic stroke patients in the week after the terror attack (supplemental material).
 
-# Figure National
+## DISCUSSION
+
+The March 15th Christchurch terror attack was associated with a marked increase in the number of local stroke reperfusion treatments which is very unlikely to be due to chance. This increase was driven by a significantly higher rate of patients presenting with LVO compared to stable baseline data – an objective marker of significant acute ischaemic stroke. This occurred despite no increase in the total number of ischaemic strokes presenting to Christchurch hospital in the same period, suggesting the effect of the terror attack was specific to mechanisms underpinning severe stroke syndromes associated with LVO. Although there was no strong effect on national ischaemic stroke admissions, there was a weak signal for increased national reperfusion treatments, suggesting that although the terror attack effect was mostly seen locally, a smaller more widespread impact remains possible. 
+
+What physiological explanation could underpin the observed rise in LVO? Although LVO is more common with increasing age[4] and atrial fibrillation[5], we did not observe a difference in these variables in the affected week compared to baseline. It is plausible transient arrhythmias were undetected during hospitalisation as extreme psychological stress could result in cardiac arrhythmias as observed in the aftermath of the September 11 attack on the World Trade Center[6, 7]. Extreme psychological stress may promote thrombosis through sympathetic nervous system activation, haemoconcentration, platelet activation and increased fibrin production [1, 2].  Although unproven, it is plausible the combination of psychophysiological factors and pro-arrhythmogenicity associated with acute stress likely triggered ischaemic stroke due to LVO in patients admitted in the week after the terror attack. Such a mechanism may also account for the apparent lag, by a few days, in the increase in LVO presentations.
+
+Study limitations include the absence of data for LVO rates outside of Christchurch Hospital, and the absence of markers of physiological or psychological stress, meaning we can only postulate regarding mediators of the observed LVO and terror attack association.
+
+We demonstrate that sudden catastrophic events such as terror attacks may increase the numbers of patients developing intracranial LVO requiring stroke reperfusion therapies within the affected community. 
 
 
-```{r main-figure, fig.width = 18/2.54, fig.height = 13/2.54, fig.cap="Number of stroke admissions (top row) and stroke reperfusions (bottom row) per week for Christchurch Hospital and nationally (excluding Christchurch Hospital). The week starting on Monday, following the stroke attack, is highlighted as week 0. The average number of admissions or strokes per week is shown by the black horizontal line. Figure by Myall (2020), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
+
+```{r combined-figure, echo=FALSE, fig.width = 18/2.54, fig.height = 22/2.54, fig.fullwidth=TRUE, fig.cap="Figure 1", dev='png', dev.args=list(type='cairo')}
 
 dat_mean_rate_admissions <- data.frame(area = c('National','Christchurch'),
                     rate = c(exp(national_admissions_coefs['Intercept','Estimate']),
                              exp(Christchurch_admissions_coefs['Intercept','Estimate'])
                     )
-)
+  ) %>%
+  mutate(label=glue("mean\n{ndigits(rate,0)}"))
+  
 
 dat_mean_rate_repurfusion <- data.frame(area = c('National','Christchurch'),
                     rate = c(exp(national_Reperfusion_coefs['Intercept','Estimate']),
                              exp(Christchurch_Reperfusion_coefs['Intercept','Estimate'])
                              
                     )
-)
+) %>%
+  mutate(label=glue("mean\n{ndigits(rate,1)}"),
+         pos = c(16.3,3.3))
 
 dat_figure_1a <- dat_all %>%
   filter(var %in% c('Admissions'))
 
+# t, r, b, l 	Dimensions of each margin. 
+# (To remember order, think trouble).
+
 figure_1a = ggplot(dat_figure_1a,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of stroke admissions per week")+
+  geom_hline(data = dat_mean_rate_admissions, aes(yintercept = rate))+
+  geom_text(aes(label=label,y=rate*1.11,x=-64,fill=NULL),
+            data = dat_mean_rate_admissions,
+            size=2,hjust=1) +
+  ggtitle("A Stroke admissions")+
+  xlab("Weeks relative to terror attack")+xlim(-67,5)+
+  facet_wrap(~area,scales = "free_y")+
+  scale_fill_manual(values=two_colours)+
+  scale_y_continuous(breaks= pretty_breaks())+
+  theme_ipsum()+
+  theme(legend.position="none",
+        plot.title.position = "plot",
+        plot.margin = unit(c(0.1, 0.1, 0.3, 0.1), "cm"))
+
+dat_figure_1b <- dat_all %>%
+  filter(var %in% c('Reperfusion'))
+
+figure_1b = ggplot(dat_figure_1b,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of stroke reperfusions per week")+
+  geom_hline(data = dat_mean_rate_repurfusion, aes(yintercept = rate))+
+  geom_text(aes(label=label,y=pos,x=-64,fill=NULL),
+            data = dat_mean_rate_repurfusion,
+            size=2,hjust=1) +
+  ggtitle("B Stroke reperfusions")+
+  xlab("Weeks relative to terror attack")+xlim(-67,5)+
+  facet_wrap(~area,scales = "free_y")+
+  scale_fill_manual(values=two_colours)+
+  scale_y_continuous(breaks= pretty_breaks())+
+  theme_ipsum()+
+  theme(legend.position="none",
+        plot.title.position = "plot",
+        plot.margin = unit(c(0.1, 0.1, 0.3, 0.1), "cm"))
+
+mean_rate = exp(Christchurch_LVO_daily_coefs['Intercept','Estimate'])
+
+figure_1c1 <- dat_daily %>%
+  ggplot(aes(x=date, y=roll_total, fill=effect2)) + 
+  geom_bar(stat="identity") +
+  ylab("Seven-day rolling total")+
+  scale_y_continuous(breaks= pretty_breaks())+
+  geom_hline(yintercept = mean_rate*7) +
+  scale_fill_manual(values=two_colours)+
+  theme_ipsum()+
+  ggtitle("C Large vessel occlusion - Christchurch rolling weekly total")+
+  annotate("text",label="Day of terror attack",
+           x=dmy("3/03/2019"),y=-0.5,size=3,hjust=1) +
+  annotate(
+    geom = "curve", x = dmy("4/3/2019"), y = -0.5, 
+    xend = dmy("15/3/2019"), yend = 0, 
+    curvature = .2, arrow = arrow(length = unit(2, "mm"))
+  ) + 
+  annotate("text",label=glue("mean\n{ndigits(mean_rate*7,1)}"),
+           x=dmy("1/01/2018"),y=3,size=2,hjust=1) +
+  coord_cartesian(ylim=c(0,10),
+                  clip = 'off') +
+  theme(legend.position="none",
+        plot.title.position = "plot",
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
+
+figure_1c2 = dat_daily %>%
+  ggplot(aes(x=date, y=LVO)) + 
+  geom_bar(stat="identity") +
+  ylab("Daily count")+xlab("Day")+
+  scale_y_continuous(breaks= pretty_breaks(n=3))+
+  scale_fill_manual(values=two_colours)+
+  geom_hline(yintercept = mean_rate) +
+  annotate("text",label=glue("mean\n{ndigits(mean_rate,1)}"),
+           x=dmy("1/01/2018"),y=1,size=2,hjust=1) +
+  theme_ipsum()+
+  theme(legend.position="none",
+        panel.grid.minor.y = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
+
+
+
+figure_1 = cowplot::plot_grid(figure_1a,
+                              figure_1b,
+                              figure_1c1,
+                              figure_1c2,
+                              align = 'v',
+                              axis = 'bt', 
+                              ncol = 1,
+                              rel_heights = c(0.7,0.7,0.75,0.25))
+
+ggsave(plot = figure_1,"figures/figure_1.pdf",width=18,height=22,
+       units = 'cm',device = cairo_pdf)
+
+ggsave(plot = figure_1,"figures/figure_1.png",width=18,height=22,
+       units = 'cm',dpi = 600, type = 'cairo')
+
+print(figure_1)
+```
+
+## Figure 1 Caption 
+
+A) Number of ischaemic strokes per week (Monday-Sunday) at Christchurch Hospital (left panel) and elsewhere in New Zealand (right panel) with the week following the terror attack highlighted at week 0. The average number of strokes per week is shown by the black horizontal line.  There was no evidence for increase in total ischaemic stroke admissions the week after terror attack in Christchurch Hospital (n= 26, mean rate = 27, P = 39%) or elsewhere in New Zealand (n=118, mean rate = 105, P = 80%). B) Total weekly (Monday-Sunday) number of stroke reperfusion treatment at Christchurch Hospital (left panel) and elsewhere in New Zealand (right panel) with the week following the terror attack highlighted at week 0. There was strong evidence for increase in reperfusion treatment in Christchurch (week after terror attack =11, mean rate= 2.6, P = 99.9%) without strong evidence for an increase elsewhere in New Zealand (week after = 22, mean rate= 14, P = 96%). C) Rolling left-aligned weekly total large vessel occlusions in Christchurch by day. Counts where there was strong evidence of an increase in the total LVOs were shaded red. Figure by Myall (2020), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license..
+
+
+```{r stroke-type-figure, echo=FALSE, fig.width = 18/2.54, fig.height = 7/2.54, fig.cap="Figure 2", dev='png', dev.args=list(type='cairo')}
+
+dat_supp_figure_1 <- dat_all %>%
+  filter(var %in% c('Thrombolysis','LVO','Thrombectomy')) %>%
+  mutate(var = recode(var, LVO = "Large vessel occlusion"))
+
+dat_mean_rate <- data.frame(var = c('Thrombolysis','Large vessel occlusion','Thrombectomy'),
+                    rate = c(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']),
+                             exp(Christchurch_LVO_coefs['Intercept','Estimate']),
+                             exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate'])
+                    )
+)
+
+supp_figure_1 = ggplot(dat_supp_figure_1,aes(y=count,x=Week,fill=effect))+
+  geom_bar(stat="identity")+ylab("Number of strokes per week")+
+  geom_hline(data = dat_mean_rate, aes(yintercept = rate))+
+  xlab("Weeks relative to terror attack")+
+  facet_wrap(~var)+
+  scale_y_continuous(breaks= pretty_breaks())+
+  scale_fill_manual(values=two_colours)+
+  theme_ipsum()+
+  theme(legend.position="none",
+        plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+
+print(supp_figure_1)
+
+ggsave(plot = supp_figure_1, 
+       filename = 'figures/supp_figure_1.pdf', width = 18, height = 7, 
+       units = 'cm', device = cairo_pdf,)
+
+ggsave(plot = supp_figure_1, 
+       filename = 'figures/supp_figure_1.png', width = 18, height = 7, 
+       units = 'cm', dpi = 600, type = 'cairo')
+
+```
+
+## Supplementary Figure Caption
+
+Number of strokes per week by type at Christchurch Hospital, with the week starting on Monday following the terror attack highlighted at week 0. The average number of strokes per week is shown by the black horizontal line. 
+
+
+<!-- Following plots are redundant -->
+
+
+```{r extra-figure-1, echo=FALSE, include = FALSE, fig.width = 18/2.54, fig.height = 13/2.54, fig.cap="Number of stroke admissions (top row) and stroke reperfusions (bottom row) per week for Christchurch Hospital and nationally (excluding Christchurch Hospital). The week starting on Monday, following the stroke attack, is highlighted as week 0. The average number of admissions or strokes per week is shown by the black horizontal line. ", dev='png', dev.args=list(type='cairo')}
+
+### REDUNDANT, included in combined figure
+
+
+dat_extra_figure_1a <- dat_all %>%
+  filter(var %in% c('Admissions'))
+
+extra_figure_1a = ggplot(dat_extra_figure_1a,aes(y=count,x=Week,fill=effect))+
   geom_bar(stat="identity")+ylab("Number of stroke admissions per week")+
   geom_hline(data = dat_mean_rate_admissions, aes(yintercept = rate))+
   xlab("Weeks relative to terror attack")+
@@ -328,10 +585,10 @@ figure_1a = ggplot(dat_figure_1a,aes(y=count,x=Week,fill=effect))+
         axis.ticks.x=element_blank(),
         plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
-dat_figure_1b <- dat_all %>%
+dat_extra_figure_1b <- dat_all %>%
   filter(var %in% c('Reperfusion'))
 
-figure_1b = ggplot(dat_figure_1b,aes(y=count,x=Week,fill=effect))+
+extra_figure_1b = ggplot(dat_extra_figure_1b,aes(y=count,x=Week,fill=effect))+
   geom_bar(stat="identity")+ylab("Number of stroke reperfusions per week")+
   geom_hline(data = dat_mean_rate_repurfusion, aes(yintercept = rate))+
   xlab("Weeks relative to terror attack")+
@@ -342,58 +599,88 @@ figure_1b = ggplot(dat_figure_1b,aes(y=count,x=Week,fill=effect))+
   theme(legend.position="none",
         plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
-figure_1 = cowplot::plot_grid(figure_1a, figure_1b, 
+extra_figure_1 = cowplot::plot_grid(extra_figure_1a, extra_figure_1b, 
                               align = 'v',
                               axis = 'bt', ncol = 1)
 
-print(figure_1)
+print(extra_figure_1)
 
-ggsave(plot = figure_1, 
-       filename = 'figures/Figure_1.pdf', width = 18, height = 13, 
+ggsave(plot = extra_figure_1, 
+       filename = 'figures/extra_figure_1.pdf', width = 18, height = 13, 
        units = 'cm', device = cairo_pdf,)
 
-ggsave(plot = figure_1, 
-       filename = 'figures/Figure_1.png', width = 18, height = 13, 
+ggsave(plot = extra_figure_1, 
+       filename = 'figures/extra_figure_1.png', width = 18, height = 13, 
        units = 'cm', dpi = 600, type = 'cairo')
 
 ```
 
 
-```{r stroke-type-figure, fig.width = 18/2.54, fig.height = 7/2.54, fig.cap="Number of strokes per week by type at Christchurch Hospital, with the week starting on Monday following the terror attack highlighted at week 0. The average number of strokes per week is shown by the black horizontal line. Figure by Myall (2020), distributed at https://doi.org/10.6084/xx under an open CC-BY 4.0 license.", dev='png', dev.args=list(type='cairo')}
 
-dat_figure_2 <- dat_all %>%
-  filter(var %in% c('Thrombolysis','LVO','Thrombectomy')) %>%
-  mutate(var = recode(var, LVO = "Large vessel occlusion"))
 
-dat_mean_rate <- data.frame(var = c('Thrombolysis','Large vessel occlusion','Thrombectomy'),
-                    rate = c(exp(Christchurch_Thrombolysis_coefs['Intercept','Estimate']),
-                             exp(Christchurch_LVO_coefs['Intercept','Estimate']),
-                             exp(Christchurch_Thrombectomy_coefs['Intercept','Estimate'])
-                    )
-)
+```{r daily-lvo-figure, echo=FALSE, include = FALSE}
 
-figure_2 = ggplot(dat_figure_2,aes(y=count,x=Week,fill=effect))+
-  geom_bar(stat="identity")+ylab("Number of strokes per week")+
-  geom_hline(data = dat_mean_rate, aes(yintercept = rate))+
-  xlab("Weeks relative to terror attack")+
-  facet_wrap(~var)+#,scales = "free_y")+
-  #scale_y_continuous(breaks=seq(0,10,2))+
+# Redundant, included in combinded figure
+
+# Check to see if day-of-week effect (i.e., reduction in weekend)
+# Doesn't look like there is
+dat_daily %>%
+  group_by(day_of_week) %>%
+  summarise(count = sum(LVO))
+
+mean_rate = exp(Christchurch_LVO_daily_coefs['Intercept','Estimate'])
+
+
+extra_figure_3a <- dat_daily %>%
+  ggplot(aes(x=date, y=roll_total, fill=effect2)) + 
+  geom_bar(stat="identity") +
+  ylab("Seven-day rolling total")+
   scale_y_continuous(breaks= pretty_breaks())+
+  geom_hline(yintercept = mean_rate*7) +
+  geom_vline(xintercept = dmy("15/3/2019")) +
   scale_fill_manual(values=two_colours)+
   theme_ipsum()+
+  ggtitle("Large vessel occlusion")+
+  annotate("text",label="Day of terror attack",
+           x=dmy("12/03/2019"),y=9,size=3,hjust=1) +
+  annotate("text",label=glue("mean\n{ndigits(mean_rate*7,1)}"),
+           x=dmy("1/01/2018"),y=3,size=2,hjust=1) +
   theme(legend.position="none",
-        plot.margin = unit(c(0, 0, 0, 0), "cm"))
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
 
+extra_figure_3b = dat_daily %>%
+  ggplot(aes(x=date, y=LVO)) + 
+  annotate("rect", xmin = dmy("15/3/2019"), xmax = dmy("25/3/2019"), 
+               ymin = 0, ymax = 3, alpha = .4, fill = "#DD0000") +
+  geom_bar(stat="identity") +
+  ylab("Daily count")+xlab("Day")+
+  scale_y_continuous(breaks= pretty_breaks(n=3))+
+  scale_fill_manual(values=two_colours)+
+  geom_hline(yintercept = mean_rate) +
+  geom_vline(xintercept = dmy("15/3/2019")) +
+  annotate("text",label=glue("mean\n{ndigits(mean_rate,1)}"),
+           x=dmy("1/01/2018"),y=1,size=2,hjust=1) +
+  theme_ipsum()+
+  theme(legend.position="none",
+        panel.grid.minor.y = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"))
 
-print(figure_2)
+extra_figure_3 = cowplot::plot_grid(extra_figure_3a, extra_figure_3b, 
+                              align = 'v',
+                              axis = 'bt', 
+                              ncol = 1,
+                              rel_heights = c(0.75,0.25))
 
-ggsave(plot = figure_2, 
-       filename = 'figures/Figure_2.pdf', width = 18, height = 7, 
-       units = 'cm', device = cairo_pdf,)
+ggsave(plot = extra_figure_3,"figures/extra_figure_3.pdf",width=18,height=9,
+       units = 'cm',device = cairo_pdf)
 
-ggsave(plot = figure_2, 
-       filename = 'figures/Figure_2.png', width = 18, height = 7, 
-       units = 'cm', dpi = 600, type = 'cairo')
+ggsave(plot = extra_figure_3,"figures/extra_figure_3.png",width=18,height=9,
+       units = 'cm',dpi = 600, type = 'cairo')
+
+print(extra_figure_3)
 
 ```
 
